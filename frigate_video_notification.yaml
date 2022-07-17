@@ -1,31 +1,6 @@
 blueprint:
-  name: Frigate Video Notification (Personal)
-  description: "## Frigate Mobile App Notification\n\nThis blueprint will send a notification\
-    \ to your device when a Frigate event for the selected camera is fired. The notification\
-    \ will include a GIF of the detection, as well as a linked clip and live view.
-    \n\n
-    With this blueprint, you may send the notification to multiple devices by leaving \"Device\" blank\
-    \ and instead use a [notification group][1].\n\n### Software Version Requirements\n\
-    Minimum Home Assistant Version: 2022.2\nMinimum Frigate Version: 0.10.0 Beta 10\n\
-    Minimum Frigate Integration Version: 2.2.0\nMinimum iOS Version: 15.0\n\n### Required\
-    \ entities:\n  - Frigate Camera Name\n  - Mobile App Device **or** the name of\
-    \ a Notification Group\n\n### Optional features:\n  - You can optionally send\
-    \ the notification as a critical alert.\n  - You can choose whether or not to\
-    \ update the notification with new thumbnails as they become available.\n  - You\
-    \ can limit notifications to objects entering pre-defined [zones][2] in Frigate.\n\
-    \  - You can specify which [zones][2] to be notified about. This must be a list\
-    \ (e.g.):\n    ```yaml\n    - backyard\n    ```\n  - You can specify what type\
-    \ of [objects][3] to be notified about. This must be a list (e.g.):\n    ```yaml\n\
-    \    - person\n    - car\n    ```\n  - You can disable notifications if a presence\
-    \ entity or group is \"home\".\n  - You can configure a cooldown for the camera\
-    \ to reduce the number of notifications when back-to-back events occur.\n  - You\
-    \ can silence future notifications for a defined amount of time through actionable\
-    \ notifications. This is helpful in situations where you know you will be triggering\
-    \ detections for an extended period of time. i.e. kids playing outside.\n  - You\
-    \ can set a loitering timer to notify you of stationary objects that remain for\
-    \ a set period of time.\n\n[1]: https://companion.home-assistant.io/docs/notifications/notifications-basic#sending-notifications-to-multiple-devices\n\
-    [2]: https://blakeblackshear.github.io/frigate/configuration/cameras#zones\n[3]:\
-    \ https://blakeblackshear.github.io/frigate/configuration/objects\n"
+  name: Frigate Video Notification
+  description: ""
   domain: automation
   source_url: https://github.com/Rogue136198/HomeAssistantAutomations/blob/main/frigate_video_notification.yaml
   input:
@@ -36,17 +11,15 @@ blueprint:
       name: Notification Group
       description: The name of the notification group to call.
       default: ''
+    camera_page:
+      name: Camera URL
+      description: The URL of your camera page e.g. /lovelace/camera
+      default: '/lovelace/camera'
     base_url:
       name: (Optional) Base URL
       description: 'The external url for your Home Assistant instance. This will default
         to a relative URL and will open the clips in the app instead of the browser,
-        which does not work well on iOS.
-
-        '
-      default: ''
-    camera_page:
-      name: Camera URL
-      description: The URL of your camera page
+        which does not work well on iOS.'
       default: ''
     critical:
       name: (Optional) Critical Notification
@@ -177,8 +150,7 @@ action:
           > 0 }}'
         - '{{ not initial_home }}'
         sequence:
-        - choose:
-          default:
+        - parallel:
           - service: notify.{{ group_target }}
             data:
               title:  '{{ label }} seen • {{ camera_name }}'
@@ -203,65 +175,31 @@ action:
                 - action: silence-{{ camera }}
                   title: Silence
                   destructive: true
-    - repeat:
-        sequence:
-        - wait_for_trigger:
-          - platform: mqtt
-            topic: frigate/events
-            payload: '{{ id }}'
-            value_template: '{{ value_json[''after''][''id''] }}'
-          timeout:
-            minutes: 2
-          continue_on_timeout: false
-        - variables:
-            id: '{{ trigger.payload_json[''after''][''id''] }}'
-            object: '{{ trigger.payload_json[''after''][''label''] }}'
-            label: '{{ object | title }}'
-            initial_home: '{{ presence_entity != '''' and is_state(presence_entity, ''home'')
-              }}'
-            initial_entered_zones: '{{ trigger.payload_json[''after''][''entered_zones'']
-              }}'
-            new_snapshot: '{{ event[''before''][''snapshot_time''] != event[''after''][''snapshot_time''] 
-              }}'
-            
-        - alias: Update with video
-          choose:
-          - conditions: 
-            - '{{ not zone_only or initial_entered_zones|length > 0 }}'
-            - '{{ not zones|length or zones|select(''in'', initial_entered_zones)|list|length
-              > 0 }}'
-            - '{{ not initial_home }}'
-            - '{{ new_snapshot }}'
-            sequence:
-            - choose:
-              default:
-              - service: notify.{{ group_target }}
-                data:
-                  title:  '{{ label }} seen • {{ camera_name }}'
-                  message: '{{ camera_name }}'
-                  data:
-                    tag: '{{ id }}'
-                    group: '{{ camera_name }}'
-                    video: /api/frigate/notifications/{{id}}/{{camera}}/clip.mp4
-                    clickAction: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
-                    channel: Cameras
-                    ttl: '{{ iif(critical, 0, 3600000) }}'
-                    priority: '{{ iif(critical, ''high'', ''normal'') }}'
-                    url: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
-                    attachment:
-                      url: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
-                    push:
-                      interruption-level: '{{ iif(critical, ''critical'', ''active'')
-                        }}'
-                    actions:
-                    - action: URI
-                      title: View Clip
-                      uri: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
-                    - action: URI
-                      title: View Cameras
-                      uri: '{{base_url}}/{{camera_page}}'
-                    - action: silence-{{ camera }}
-                      title: Silence
-                      destructive: true
-        until: '{{ not wait.trigger or wait.trigger.payload_json[''type''] == ''end''
-          }}'
+          - service: notify.{{ group_target }}
+            data:
+              title:  '{{ label }} seen • {{ camera_name }}'
+              message: '{{ camera_name }}'
+              data:
+                tag: '{{ id }}'
+                group: '{{ camera_name }}'
+                video: /api/frigate/notifications/{{id}}/{{camera}}/clip.mp4      
+                clickAction: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
+                channel: Cameras
+                ttl: '{{ iif(critical, 0, 3600000) }}'
+                priority: '{{ iif(critical, ''high'', ''normal'') }}'
+                url: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
+                attachment:
+                  url: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
+                push:
+                  interruption-level: '{{ iif(critical, ''critical'', ''active'')
+                    }}'
+                actions:
+                - action: URI
+                  title: View Clip
+                  uri: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
+                - action: URI
+                  title: View Cameras
+                  uri: '{{base_url}}/{{camera_page}}'
+                - action: silence-{{ camera }}
+                  title: Silence
+                  destructive: true
