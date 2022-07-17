@@ -1,5 +1,5 @@
 blueprint:
-  name: Frigate Video Notification (Personal)
+  name: Frigate Video Notification
   description: "## Frigate Mobile App Notification\n\nThis blueprint will send a notification\
     \ to your device when a Frigate event for the selected camera is fired. The notification\
     \ will include a GIF of the detection, as well as a linked clip and live view.
