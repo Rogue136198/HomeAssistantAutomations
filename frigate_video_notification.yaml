@@ -32,15 +32,6 @@ blueprint:
     camera:
       name: Frigate Camera
       description: The name of the camera as defined in your frigate configuration.
-    notify_device:
-      name: Device
-      description: The device must run the official Home Assistant app to receive
-        notifications.
-      default: false
-      selector:
-        device:
-          integration: mobile_app
-          multiple: true
     notify_group:
       name: Notification Group
       description: The name of the notification group to call.
@@ -187,37 +178,6 @@ action:
         - '{{ not initial_home }}'
         sequence:
         - choose:
-          - conditions: '{{ not group_target }}'
-            sequence:
-            - device_id: !input 'notify_device'
-              domain: mobile_app
-              type: notify
-              title: '{{ label }} seen • {{ camera_name }}'
-              message: '{{ camera_name }}'
-              data:
-                tag: '{{ id }}'
-                group: '{{ camera_name }}'
-                video: /api/frigate/notifications/{{id}}/{{camera}}/clip.mp4
-                clickAction: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
-                channel: Cameras
-                ttl: '{{ iif(critical, 0, 3600000) }}'
-                priority: '{{ iif(critical, ''high'', ''normal'') }}'
-                url: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
-                attachment:
-                  url: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
-                push:
-                  interruption-level: '{{ iif(critical, ''critical'', ''active'')
-                    }}'
-                actions:
-                - action: URI
-                  title: View Clip
-                  uri: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
-                - action: URI
-                  title: View Cameras
-                  uri: '{{base_url}}/{{camera_page}}'
-                - action: silence-{{ camera }}
-                  title: Silence
-                  destructive: true
           default:
           - service: notify.{{ group_target }}
             data:
@@ -226,7 +186,6 @@ action:
               data:
                 tag: '{{ id }}'
                 group: '{{ camera_name }}'
-                video: /api/frigate/notifications/{{id}}/{{camera}}/clip.mp4
                 clickAction: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
                 channel: Cameras
                 ttl: '{{ iif(critical, 0, 3600000) }}'
@@ -239,11 +198,70 @@ action:
                     }}'
                 actions:
                 - action: URI
-                  title: View Clip
-                  uri: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
-                - action: URI
                   title: View Cameras
                   uri: '{{base_url}}/{{camera_page}}'
                 - action: silence-{{ camera }}
                   title: Silence
                   destructive: true
+    - repeat:
+        sequence:
+        - wait_for_trigger:
+          - platform: mqtt
+            topic: frigate/events
+            payload: '{{ id }}'
+            value_template: '{{ value_json[''after''][''id''] }}'
+          timeout:
+            minutes: 2
+          continue_on_timeout: false
+        - variables:
+            id: '{{ trigger.payload_json[''after''][''id''] }}'
+            object: '{{ trigger.payload_json[''after''][''label''] }}'
+            label: '{{ object | title }}'
+            initial_home: '{{ presence_entity != '''' and is_state(presence_entity, ''home'')
+              }}'
+            initial_entered_zones: '{{ trigger.payload_json[''after''][''entered_zones'']
+              }}'
+            new_snapshot: '{{ event[''before''][''snapshot_time''] != event[''after''][''snapshot_time''] 
+              }}'
+            
+        - alias: Update with video
+          choose:
+          - conditions: 
+            - '{{ not zone_only or initial_entered_zones|length > 0 }}'
+            - '{{ not zones|length or zones|select(''in'', initial_entered_zones)|list|length
+              > 0 }}'
+            - '{{ not initial_home }}'
+            - '{{ new_snapshot }}'
+            sequence:
+            - choose:
+              default:
+              - service: notify.{{ group_target }}
+                data:
+                  title:  '{{ label }} seen • {{ camera_name }}'
+                  message: '{{ camera_name }}'
+                  data:
+                    tag: '{{ id }}'
+                    group: '{{ camera_name }}'
+                    video: /api/frigate/notifications/{{id}}/{{camera}}/clip.mp4
+                    clickAction: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
+                    channel: Cameras
+                    ttl: '{{ iif(critical, 0, 3600000) }}'
+                    priority: '{{ iif(critical, ''high'', ''normal'') }}'
+                    url: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
+                    attachment:
+                      url: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
+                    push:
+                      interruption-level: '{{ iif(critical, ''critical'', ''active'')
+                        }}'
+                    actions:
+                    - action: URI
+                      title: View Clip
+                      uri: '{{base_url}}/api/frigate/notifications/{{id}}/{{camera}}/clip.mp4'
+                    - action: URI
+                      title: View Cameras
+                      uri: '{{base_url}}/{{camera_page}}'
+                    - action: silence-{{ camera }}
+                      title: Silence
+                      destructive: true
+        until: '{{ not wait.trigger or wait.trigger.payload_json[''type''] == ''end''
+          }}'
